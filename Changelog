@@ -1,3 +1,7 @@
+2016/01/22 - v0.6.1
+    * Added funtions for working with device tree. In header of boot image places
+      in unused memory space. I found using this in SpreadTrum images.
+
 2015/01/16 - v0.6h60
     * hardcoded offset for Huawei Honor 6
 
