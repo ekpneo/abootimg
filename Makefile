@@ -1,9 +1,11 @@
 
-CPPFLAGS=-DHAS_BLKID
-CFLAGS=-O3 -Wall
-LDLIBS=-lblkid
+CC=cc
+#CFLAGS=-O3 -Wall -DHAS_BLKID
+CFLAGS=-Wall -g -ggdb -DHAS_BLKID
+LIBS= -lblkid
 
-all: abootimg
+all: abootimg.o sha.o
+	$(CC) $(LDLAGS) -o abootimg abootimg.o sha.o $(LIBS)
 
 version.h:
 	if [ ! -f version.h ]; then \
@@ -15,6 +17,10 @@ version.h:
 	fi
 
 abootimg.o: bootimg.h version.h
+	$(CC) $(CFLAGS) -c -o abootimg.o abootimg.c
+
+sha.o:
+	$(CC) $(CFLAGS) -c -o sha.o minicript/sha.c
 
 clean:
 	rm -f abootimg *.o version.h
