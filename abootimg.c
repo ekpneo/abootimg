@@ -791,9 +791,12 @@ void write_bootimg(t_abootimg* img)
     if (ferror(img->stream))
       abort_perror(img->fname);
 
-    fwrite(padding, psize - (img->header.second_size % psize), 1, img->stream);
-    if (ferror(img->stream))
-      abort_perror(img->fname);
+    unsigned pad_size = padding_size(img->header.second_size, psize);
+    if(pad_size > 0) {
+        fwrite(padding, pad_size, 1, img->stream);
+        if (ferror(img->stream))
+          abort_perror(img->fname);
+    }
   }
   
   if (img->header.dt_size) {
