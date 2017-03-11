@@ -4,8 +4,7 @@ CC=cc
 CFLAGS=-Wall -g -ggdb -DHAS_BLKID
 LIBS= -lblkid
 
-all: abootimg.o sha.o
-	$(CC) $(LDLAGS) -o abootimg abootimg.o sha.o $(LIBS)
+all: abootimg
 
 version.h:
 	if [ ! -f version.h ]; then \
@@ -16,14 +15,17 @@ version.h:
 	fi \
 	fi
 
-abootimg.o: bootimg.h version.h
+abootimg: abootimg.o sha.o
+	$(CC) $(LDLAGS) -o abootimg abootimg.o sha.o $(LIBS)
+
+abootimg.o: abootimg.c bootimg.h version.h
 	$(CC) $(CFLAGS) -c -o abootimg.o abootimg.c
 
-sha.o:
+sha.o: minicript/sha.c minicript/sha.h
 	$(CC) $(CFLAGS) -c -o sha.o minicript/sha.c
 
 clean:
 	rm -f abootimg *.o version.h
 
-.PHONY:	clean all
+.PHONY:	clean
 
