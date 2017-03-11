@@ -90,7 +90,12 @@ typedef struct
 #define MAX_CONF_LEN    4096
 char config_args[MAX_CONF_LEN] = "";
 
-
+unsigned padding_size(unsigned image_size, unsigned page_size) {
+    unsigned delta = image_size & (page_size - 1);
+    if(delta == 0)
+        return 0;
+    return page_size - delta;
+}
 
 void abort_perror(const char* str)
 {
@@ -455,6 +460,13 @@ void update_header_entry(t_abootimg* img, char* cmd)
     memset(img->header.cmdline, 0, BOOT_ARGS_SIZE);
     strcpy((char*)(img->header.cmdline), value);
   }
+  else if (!strcmp(token, "extra_cmdline")) {
+    unsigned len = strlen(value);
+    if (len >= BOOT_ARGS_SIZE) 
+      abort_printf("extra_cmdline length (%d) is too long (max %d)", len, BOOT_EXTRA_ARGS_SIZE-1);
+    memset(img->header.extra_cmdline, 0, BOOT_EXTRA_ARGS_SIZE);
+    strcpy((char*)(img->header.extra_cmdline), value);
+  }
   else if (!strncmp(token, "name", 4)) {
     strncpy((char*)(img->header.name), value, BOOT_NAME_SIZE);
     img->header.name[BOOT_NAME_SIZE-1] = '\0';
@@ -590,15 +602,7 @@ void update_images(t_abootimg *img)
   if (!page_size)
     abort_printf("%s: Image page size is null\n", img->fname);
 
-  unsigned n = (ksize + page_size - 1) / page_size;
-  unsigned m = (rsize + page_size - 1) / page_size;
-  unsigned o = (ssize + page_size - 1) / page_size;
-  unsigned p = (dtsize + page_size - 1) / page_size;
-
   unsigned koffset = page_size;
-  unsigned roffset = (1+n)*page_size;
-  unsigned soffset = (1+n+m)*page_size;
-  unsigned dtoffset = (1+n+m+o)*page_size;
 
   if (img->kernel_fname) {
     printf("reading kernel from %s\n", img->kernel_fname);
@@ -606,6 +610,9 @@ void update_images(t_abootimg *img)
   } else {
     img->kernel = slurp_section(img, koffset, img->header.kernel_size);
   }
+
+  unsigned n = (ksize + page_size - 1) / page_size;
+  unsigned roffset = (1+n)*page_size;
 
   if (img->ramdisk_fname) {
     printf("reading ramdisk from %s\n", img->ramdisk_fname);
@@ -615,6 +622,9 @@ void update_images(t_abootimg *img)
     img->ramdisk = slurp_section(img, roffset, rsize);
   }
 
+  unsigned m = (rsize + page_size - 1) / page_size;
+  unsigned soffset = (1+n+m)*page_size;
+
   if (img->second_fname) {
     printf("reading second stage from %s\n", img->second_fname);
     ssize = slurp_file(img->second_fname, &img->second);
@@ -622,6 +632,10 @@ void update_images(t_abootimg *img)
   } else if (img->header.second_size) {
     img->second = slurp_section(img, soffset, ssize);
   }
+
+  unsigned o = (ssize + page_size - 1) / page_size;
+  unsigned p = (dtsize + page_size - 1) / page_size;
+  unsigned dtoffset = (1+n+m+o)*page_size;
 
   if (img->devtree_fname) {
     printf("reading device tree from %s\n", img->devtree_fname);
@@ -694,9 +708,9 @@ void write_bootimg(t_abootimg* img)
     if (ferror(img->stream))
       abort_perror(img->fname);
 
-    unsigned delta = (img->header.kernel_size % psize);
-    if(delta > 0) {
-        fwrite(padding, psize - (img->header.kernel_size % psize), 1, img->stream);
+    unsigned pad_size = padding_size(img->header.kernel_size, psize);
+    if(pad_size > 0) {
+        fwrite(padding, pad_size, 1, img->stream);
         if (ferror(img->stream))
           abort_perror(img->fname);
     }
@@ -710,9 +724,9 @@ void write_bootimg(t_abootimg* img)
     if (ferror(img->stream))
       abort_perror(img->fname);
 
-    unsigned delta = (img->header.ramdisk_size % psize);
-    if(delta > 0) {
-        fwrite(padding, psize - (img->header.ramdisk_size % psize), 1, img->stream);
+    unsigned pad_size = padding_size(img->header.ramdisk_size, psize);
+    if(pad_size > 0) {
+        fwrite(padding, pad_size, 1, img->stream);
         if (ferror(img->stream))
           abort_perror(img->fname);
     }
@@ -726,9 +740,12 @@ void write_bootimg(t_abootimg* img)
     if (ferror(img->stream))
       abort_perror(img->fname);
 
-    fwrite(padding, psize - (img->header.second_size % psize), 1, img->stream);
-    if (ferror(img->stream))
-      abort_perror(img->fname);
+    unsigned pad_size = padding_size(img->header.second_size, psize);
+    if(pad_size > 0) {
+        fwrite(padding, pad_size, 1, img->stream);
+        if (ferror(img->stream))
+          abort_perror(img->fname);
+    }
   }
   
   if (img->header.dt_size) {
@@ -739,9 +756,9 @@ void write_bootimg(t_abootimg* img)
     if (ferror(img->stream))
       abort_perror(img->fname);
 
-    unsigned delta = (img->header.dt_size % psize);
-    if(delta > 0) {
-        fwrite(padding, psize - delta, 1, img->stream);
+    unsigned pad_size = padding_size(img->header.dt_size, psize);
+    if(pad_size > 0) {
+        fwrite(padding, pad_size, 1, img->stream);
         if (ferror(img->stream))
           abort_perror(img->fname);
     }
@@ -791,6 +808,11 @@ void print_bootimg_info(t_abootimg* img)
   else
     printf ("* empty cmdline\n");
 
+  if (img->header.extra_cmdline[0])
+    printf ("* extra cmdline = %s\n\n", img->header.extra_cmdline);
+  else
+    printf ("* empty extra cmdline\n");
+
   printf ("* id = ");
   int i;
   for (i=0; i<8; i++)
@@ -819,6 +841,7 @@ void write_bootimg_config(t_abootimg* img)
 
   fprintf(config_file, "name = %s\n", img->header.name);
   fprintf(config_file, "cmdline = %s\n", img->header.cmdline);
+  fprintf(config_file, "extra_cmdline = %s\n", img->header.extra_cmdline);
   
   fclose(config_file);
 }
@@ -862,11 +885,10 @@ void extract_kernel(t_abootimg* img)
 void extract_ramdisk(t_abootimg* img)
 {
   unsigned psize = img->header.page_size;
-  unsigned ksize = img->header.kernel_size;
+  unsigned ksize = img->header.kernel_size + padding_size(img->header.kernel_size, psize);
   unsigned rsize = img->header.ramdisk_size;
 
-  unsigned n = (ksize + psize - 1) / psize;
-  unsigned roffset = (1+n)*psize;
+  unsigned roffset = psize + ksize;
 
   printf ("extracting ramdisk in %s\n", img->ramdisk_fname);
 
@@ -898,8 +920,8 @@ void extract_ramdisk(t_abootimg* img)
 void extract_second(t_abootimg* img)
 {
   unsigned psize = img->header.page_size;
-  unsigned ksize = img->header.kernel_size;
-  unsigned rsize = img->header.ramdisk_size;
+  unsigned ksize = img->header.kernel_size + padding_size(img->header.kernel_size, psize);
+  unsigned rsize = img->header.ramdisk_size + padding_size(img->header.ramdisk_size, psize);
   unsigned ssize = img->header.second_size;
 
   if (!ssize) // Second Stage not present
@@ -936,9 +958,9 @@ void extract_second(t_abootimg* img)
 void extract_devtree(t_abootimg* img)
 {
   unsigned psize = img->header.page_size;
-  unsigned ksize = img->header.kernel_size;
-  unsigned rsize = img->header.ramdisk_size;
-  unsigned ssize = img->header.second_size;
+  unsigned ksize = img->header.kernel_size + padding_size(img->header.kernel_size, psize);
+  unsigned rsize = img->header.ramdisk_size + padding_size(img->header.ramdisk_size, psize);
+  unsigned ssize = img->header.second_size + padding_size(img->header.second_size, psize);
   unsigned dtsize = img->header.dt_size;
 
   if (!dtsize) // Device tree not present
