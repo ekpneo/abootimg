@@ -689,7 +689,7 @@ void write_bootimg(t_abootimg* img)
   if (ferror(img->stream))
     abort_perror(img->fname);
 
-  if (img->kernel && img->kernel_fname) {
+  if (img->kernel) {
     fwrite(img->kernel, img->header.kernel_size, 1, img->stream);
     if (ferror(img->stream))
       abort_perror(img->fname);
@@ -702,7 +702,7 @@ void write_bootimg(t_abootimg* img)
     }
   }
 
-  if (img->ramdisk && img->ramdisk_fname) {
+  if (img->ramdisk) {
     if (fseek(img->stream, (1+n)*psize, SEEK_SET))
       abort_perror(img->fname);
 
