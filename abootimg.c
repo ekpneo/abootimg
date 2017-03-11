@@ -535,7 +535,49 @@ void update_header(t_abootimg* img)
   }
 }
 
+unsigned slurp_file(const char *fname, char** data)
+{
+  FILE* stream = fopen(fname, "r");
+  if (!stream)
+    abort_perror(fname);
 
+  struct stat st;
+  if (fstat(fileno(stream), &st))
+    abort_perror(fname);
+  unsigned size = st.st_size;
+
+  char* d = malloc(size);
+  if (!d)
+    abort_perror("malloc");
+
+  size_t rb = fread(d, size, 1, stream);
+  if ((rb!=1) || ferror(stream))
+    abort_perror(fname);
+  else if (feof(stream))
+    abort_printf("%s: cannot read\n", fname);
+
+  *data = d;
+
+  fclose(stream);
+  return size;
+}
+
+char * slurp_section(t_abootimg *img, unsigned offset, unsigned size) {
+  char* r = malloc(size);
+  if (!r)
+    abort_perror("");
+
+  if (fseek(img->stream, offset, SEEK_SET))
+    abort_perror(img->fname);
+
+  size_t rb = fread(r, size, 1, img->stream);
+  if ((rb!=1) || ferror(img->stream))
+    abort_perror(img->fname);
+  else if (feof(img->stream))
+    abort_printf("%s: cannot read section\n", img->fname);
+
+  return r;
+}
 
 void update_images(t_abootimg *img)
 {
@@ -553,138 +595,40 @@ void update_images(t_abootimg *img)
   unsigned o = (ssize + page_size - 1) / page_size;
   unsigned p = (dtsize + page_size - 1) / page_size;
 
+  unsigned koffset = page_size;
   unsigned roffset = (1+n)*page_size;
   unsigned soffset = (1+n+m)*page_size;
   unsigned dtoffset = (1+n+m+o)*page_size;
 
   if (img->kernel_fname) {
     printf("reading kernel from %s\n", img->kernel_fname);
-    FILE* stream = fopen(img->kernel_fname, "r");
-    if (!stream)
-      abort_perror(img->kernel_fname);
-    struct stat st;
-    if (fstat(fileno(stream), &st))
-      abort_perror(img->kernel_fname);
-    ksize = st.st_size;
-    char* k = malloc(ksize);
-    if (!k)
-      abort_perror("");
-    size_t rb = fread(k, ksize, 1, stream);
-    if ((rb!=1) || ferror(stream))
-      abort_perror(img->kernel_fname);
-    else if (feof(stream))
-      abort_printf("%s: cannot read kernel\n", img->kernel_fname);
-    fclose(stream);
-    img->header.kernel_size = ksize;
-    img->kernel = k;
+    img->header.kernel_size = slurp_file(img->kernel_fname, &img->kernel);
+  } else {
+    img->kernel = slurp_section(img, koffset, img->header.kernel_size);
   }
 
   if (img->ramdisk_fname) {
     printf("reading ramdisk from %s\n", img->ramdisk_fname);
-    FILE* stream = fopen(img->ramdisk_fname, "r");
-    if (!stream)
-      abort_perror(img->ramdisk_fname);
-    struct stat st;
-    if (fstat(fileno(stream), &st))
-      abort_perror(img->ramdisk_fname);
-    rsize = st.st_size;
-    char* r = malloc(rsize);
-    if (!r)
-      abort_perror("");
-    size_t rb = fread(r, rsize, 1, stream);
-    if ((rb!=1) || ferror(stream))
-      abort_perror(img->ramdisk_fname);
-    else if (feof(stream))
-      abort_printf("%s: cannot read ramdisk\n", img->ramdisk_fname);
-    fclose(stream);
+    rsize = slurp_file(img->ramdisk_fname, &img->ramdisk);
     img->header.ramdisk_size = rsize;
-    img->ramdisk = r;
-  }
-  else if (img->kernel) {
-    // if kernel is updated, copy the ramdisk from original image
-    char* r = malloc(rsize);
-    if (!r)
-      abort_perror("");
-    if (fseek(img->stream, roffset, SEEK_SET))
-      abort_perror(img->fname);
-    size_t rb = fread(r, rsize, 1, img->stream);
-    if ((rb!=1) || ferror(img->stream))
-      abort_perror(img->fname);
-    else if (feof(img->stream))
-      abort_printf("%s: cannot read ramdisk\n", img->fname);
-    img->ramdisk = r;
+  } else {
+    img->ramdisk = slurp_section(img, roffset, rsize);
   }
 
   if (img->second_fname) {
     printf("reading second stage from %s\n", img->second_fname);
-    FILE* stream = fopen(img->second_fname, "r");
-    if (!stream)
-      abort_perror(img->second_fname);
-    struct stat st;
-    if (fstat(fileno(stream), &st))
-      abort_perror(img->second_fname);
-    ssize = st.st_size;
-    char* s = malloc(ssize);
-    if (!s)
-      abort_perror("");
-    size_t rb = fread(s, ssize, 1, stream);
-    if ((rb!=1) || ferror(stream))
-      abort_perror(img->second_fname);
-    else if (feof(stream))
-      abort_printf("%s: cannot read second stage\n", img->second_fname);
-    fclose(stream);
+    ssize = slurp_file(img->second_fname, &img->second);
     img->header.second_size = ssize;
-    img->second = s;
-  }
-  else if (img->ramdisk && img->header.second_size) {
-    // if ramdisk is updated, copy the second stage from original image
-    char* s = malloc(ssize);
-    if (!s)
-      abort_perror("");
-    if (fseek(img->stream, soffset, SEEK_SET))
-      abort_perror(img->fname);
-    size_t rb = fread(s, ssize, 1, img->stream);
-    if ((rb!=1) || ferror(img->stream))
-      abort_perror(img->fname);
-    else if (feof(img->stream))
-      abort_printf("%s: cannot read second stage\n", img->fname);
-    img->second = s;
+  } else if (img->header.second_size) {
+    img->second = slurp_section(img, soffset, ssize);
   }
 
   if (img->devtree_fname) {
     printf("reading device tree from %s\n", img->devtree_fname);
-    FILE* stream = fopen(img->devtree_fname, "r");
-    if (!stream)
-      abort_perror(img->devtree_fname);
-    struct stat st;
-    if (fstat(fileno(stream), &st))
-      abort_perror(img->devtree_fname);
-    ssize = st.st_size;
-    char* dt = malloc(dtsize);
-    if (!dt)
-      abort_perror("");
-    size_t rb = fread(dt, dtsize, 1, stream);
-    if ((rb!=1) || ferror(stream))
-      abort_perror(img->devtree_fname);
-    else if (feof(stream))
-      abort_printf("%s: cannot read device tree\n", img->devtree_fname);
-    fclose(stream);
+    dtsize = slurp_file(img->devtree_fname, &img->devtree);
     img->header.dt_size = dtsize;
-    img->devtree = dt;
-  }
-  else if ((img->kernel || img->second || img->ramdisk) && img->header.dt_size) {
-    // if kernel, second or ramdisk is updated, copy the device tree from original image
-    char* dt = malloc(dtsize);
-    if (!dt)
-      abort_perror("");
-    if (fseek(img->stream, dtoffset, SEEK_SET))
-      abort_perror(img->fname);
-    size_t rb = fread(dt, dtsize, 1, img->stream);
-    if ((rb!=1) || ferror(img->stream))
-      abort_perror(img->fname);
-    else if (feof(img->stream))
-      abort_printf("%s: cannot read device tree\n", img->fname);
-    img->devtree = dt;
+  } else if (img->header.dt_size) {
+    img->devtree = slurp_section(img, dtoffset, dtsize);
   }
 
   n = (img->header.kernel_size + page_size - 1) / page_size;
