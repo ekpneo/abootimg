@@ -18,6 +18,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -91,13 +92,13 @@ char config_args[MAX_CONF_LEN] = "";
 
 
 
-void abort_perror(char* str)
+void abort_perror(const char* str)
 {
   perror(str);
   exit(errno);
 }
 
-void abort_printf(char *fmt, ...)
+void abort_printf(const char *fmt, ...)
 {
   va_list args;
   va_start(args, fmt);
@@ -727,11 +728,13 @@ void write_bootimg(t_abootimg* img)
   SHA_update(&ctx, &img->header.ramdisk_size, sizeof(img->header.ramdisk_size));
   SHA_update(&ctx, img->second, img->header.second_size);
   SHA_update(&ctx, &img->header.second_size, sizeof(img->header.second_size));
-  if(img->devtree) {
+
+  if (img->devtree) {
     SHA_update(&ctx, img->devtree, img->header.dt_size);
     SHA_update(&ctx, &img->header.dt_size, sizeof(img->header.dt_size));
   }
-  const char* sha = SHA_final(&ctx);
+
+  const unsigned char* sha = SHA_final(&ctx);
   memcpy(img->header.id, sha, SHA_DIGEST_SIZE > sizeof(img->header.id) ? sizeof(img->header.id) : SHA_DIGEST_SIZE);
 
   fwrite(&img->header, sizeof(img->header), 1, img->stream);
