@@ -716,7 +716,6 @@ void write_bootimg(t_abootimg* img)
   unsigned n = (img->header.kernel_size + psize - 1) / psize;
   unsigned m = (img->header.ramdisk_size + psize - 1) / psize;
   unsigned o = (img->header.second_size + psize - 1) / psize;
-  unsigned p = (img->header.dt_size + psize - 1) / psize;
 
   if (fseek(img->stream, 0, SEEK_SET))
     abort_perror(img->fname);
